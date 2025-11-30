@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 from model import MyModel
+import asyncio
 
 app = FastAPI()
 model = MyModel()
@@ -15,7 +16,13 @@ class ClearSessionRequest(BaseModel):
 
 @app.get("/")
 async def read_root(query: ClientQuery):
-    response = model.answer_query(query.query, query.session_id)
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None, 
+        model.answer_query, 
+        query.query, 
+        query.session_id
+    )
     if isinstance(response, dict) and response.get("error"):
         return {"response": response["error"]}
     return {"response": response}

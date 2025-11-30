@@ -194,7 +194,8 @@ deps: venv
 		requests \
 		streamlit \
 		pydantic \
-		pandas
+		pandas \
+		dotenv
 	@echo "$(GREEN)✅ Зависимости установлены$(NC)"
 
 # Запуск FastAPI сервера

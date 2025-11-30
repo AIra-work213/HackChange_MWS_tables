@@ -2,17 +2,21 @@ from openai import OpenAI
 import json
 import time
 from fetch_data import get_records_from_model_query
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+api_key = os.getenv("API_KEY")
 
 class MyModel:
     def __init__(self):
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key="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",
+            api_key=api_key,
         )
         
         # Модель для использования
-        self.model_name = "tngtech/deepseek-r1t2-chimera:free"
+        self.model_name = "z-ai/glm-4.5-air:free"
         # Хранилище сессий для памяти контекста
         self.sessions: dict[str, list[dict]] = {}
         
@@ -213,7 +217,7 @@ class MyModel:
                     "content": "Пожалуйста, ответь в правильном формате JSON с action: 'query' или 'answer'"
                 })
         
-        
+
         
         messages.append({
             "role": "user",

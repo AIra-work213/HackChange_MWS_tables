@@ -1,3 +1,4 @@
 venv/
 telecom_operators_posts-2.csv
 __pycache__/
+.env
