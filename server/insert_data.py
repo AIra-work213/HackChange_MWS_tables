@@ -36,11 +36,6 @@ COLUMN_MAPPING = {
     "time_period": "time_period",   # time_period -> time_period
 }
 
-# Колонки, которых нет в CSV (нужно вычислить или оставить пустыми):
-# - attachment_description: нет данных
-# - comments_count: нет данных (comments - это текст, не количество)
-# - len_text: можно вычислить из text
-
 
 def load_csv(csv_path: str) -> pd.DataFrame:
     """Загружает CSV файл и возвращает DataFrame."""
@@ -177,15 +172,12 @@ def upload_csv(csv_path: str, max_records: int = None, start_from: int = 0):
 
 
 if __name__ == "__main__":
-    # Путь к CSV файлу
     csv_file = Path(__file__).parent.parent / "telecom_operators_posts-2.csv"
     
     if not csv_file.exists():
         print(f"Файл не найден: {csv_file}")
         exit(1)
-    
-    # Загружаем первые 1000 записей для теста
-    # Измените max_records=None для загрузки всех записей
+        
     upload_csv(str(csv_file), max_records=None)
 
 
