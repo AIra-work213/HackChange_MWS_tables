@@ -37,7 +37,7 @@ VK_GROUPS = {
 VK_TOKEN = '954e97ed954e97ed954e97ed2d967306909954e954e97edfc65b931ccd5ae0f3c2a7afe'
 
 # MWS настройки для таблицы
-MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstCNkL7G9iYsD0LY9/records"
+MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstRtSXBewJh8lLCNz/records"
 MWS_HEADERS = {
     "Authorization": "Bearer uskSID2MFKEnL7AVNUdLrnn",
     "Content-Type": "application/json"
@@ -50,13 +50,24 @@ MWS_PARAMS = {
 # Лимит постов на группу
 MAX_POSTS_PER_GROUP = 8000
 
+# Минимальная дата для постов (посты до этой даты не учитываются)
+MIN_POST_DATE = datetime(2025, 10, 11)
+
 # Специальная запись для хранения времени последнего обновления
 LAST_UPDATE_RECORD_ID = "last_update_tracker"
+
+# Настройки фонового режима (чтобы не нагружать сервер)
+BACKGROUND_MODE = True
+BACKGROUND_DELAY = 0.1  # Задержка между операциями в секундах
 
 # Глобальные счетчики
 success_count = 0
 error_count = 0
+skipped_duplicates = 0
 counter_lock = Lock()
+
+# Множество существующих post_id для проверки дубликатов
+existing_post_ids = set()
 
 class FastVKDataCollector:
     def __init__(self, vk_token, api_version='5.199'):
@@ -150,7 +161,7 @@ class FastVKDataCollector:
                 'comments_count': comments,
                 'ER': round(er, 2),
                 'Efficiency': efficiency,
-                'day_of_week': ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][datetime.fromtimestamp(date_timestamp).weekday()],
+                'day_of_week': ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"][datetime.fromtimestamp(date_timestamp).weekday()],
                 'date': datetime.fromtimestamp(date_timestamp).strftime('%Y-%m-%d'),
                 'time_period': self.get_time_period_fast(date_timestamp),
                 'len_text': len(text)
@@ -169,6 +180,69 @@ class FastVKDataCollector:
             return "Вечер"
         else:
             return "Ночь"
+
+def load_existing_post_ids():
+    """Загружает все существующие post_id из таблицы MWS для проверки дубликатов"""
+    global existing_post_ids
+    
+    print("📋 Загрузка существующих post_id для проверки дубликатов...")
+    
+    try:
+        all_ids = set()
+        page_size = 1000  # Максимум 1000 записей за запрос в MWS Tables
+        page_num = 1
+        
+        while True:
+            params = {
+                **MWS_PARAMS,
+                "pageSize": page_size,
+                "pageNum": page_num,
+                "fields": "post_id"  # Запрашиваем только post_id для экономии трафика
+            }
+            
+            response = requests.get(
+                MWS_URL,
+                params=params,
+                headers=MWS_HEADERS,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                print(f"⚠️ Ошибка при загрузке страницы {page_num}: {response.status_code}")
+                break
+            
+            data = response.json()
+            records = data.get('data', {}).get('records', [])
+            
+            if not records:
+                break
+            
+            for record in records:
+                post_id = record.get('fields', {}).get('post_id')
+                if post_id:
+                    all_ids.add(str(post_id))
+            
+            print(f"   Страница {page_num}: загружено {len(records)} записей, всего: {len(all_ids)}")
+            
+            # Проверяем, есть ли еще страницы
+            total = data.get('data', {}).get('total', 0)
+            if page_num * page_size >= total:
+                break
+            
+            page_num += 1
+            
+            # Фоновый режим: пауза между страницами
+            if BACKGROUND_MODE:
+                time.sleep(BACKGROUND_DELAY)
+        
+        existing_post_ids = all_ids
+        print(f"✅ Загружено {len(existing_post_ids)} существующих post_id")
+        return existing_post_ids
+        
+    except Exception as e:
+        print(f"⚠️ Ошибка при загрузке post_id: {e}")
+        return set()
+
 
 def get_last_update_date():
     """Получает дату последнего обновления из таблицы"""
@@ -195,21 +269,29 @@ def get_last_update_date():
                     timestamp = post_date_time / 1000
                     last_update_date = datetime.fromtimestamp(timestamp)
                     print(f"📅 Найдена дата последнего обновления в таблице: {last_update_date}")
+                    # Если дата в таблице раньше минимальной, используем минимальную
+                    if last_update_date < MIN_POST_DATE:
+                        print(f"⚠️ Дата в таблице раньше минимальной, используем: {MIN_POST_DATE}")
+                        return MIN_POST_DATE
                     return last_update_date
 
-        # Если запись не найдена, используем дату по умолчанию
-        print("⚠️ Запись о последнем обновлении не найдена, используем дату по умолчанию: 11 октября 2025")
-        return datetime(2025, 10, 11)
+        # Если запись не найдена, используем минимальную дату
+        print(f"⚠️ Запись о последнем обновлении не найдена, используем минимальную дату: {MIN_POST_DATE}")
+        return MIN_POST_DATE
 
     except Exception as e:
-        print(f"⚠️ Ошибка при получении даты обновления: {e}, используем дату по умолчанию: 11 октября 2025")
-        return datetime(2025, 10, 11)
+        print(f"⚠️ Ошибка при получении даты обновления: {e}, используем минимальную дату: {MIN_POST_DATE}")
+        return MIN_POST_DATE
 
 def upload_batch_to_mws(posts_data):
     global success_count, error_count
 
     if not posts_data:
         return 0
+    
+    # Фоновый режим: добавляем небольшую паузу
+    if BACKGROUND_MODE:
+        time.sleep(BACKGROUND_DELAY)
 
     records = []
     for post in posts_data:
@@ -268,6 +350,10 @@ def upload_batch_to_mws(posts_data):
 
 def upload_single_post_fast(post_data):
     global success_count, error_count
+    
+    # Фоновый режим: добавляем небольшую паузу
+    if BACKGROUND_MODE:
+        time.sleep(BACKGROUND_DELAY * 0.5)
 
     try:
         record = {
@@ -374,6 +460,7 @@ def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
     offset = start_offset
     batch_size = 100
     cutoff_timestamp = cutoff_date.timestamp()
+    last_progress_report = 0  # Для периодического вывода прогресса
 
     with tqdm(total=MAX_POSTS_PER_GROUP, desc=f"Группа {group_name}") as pbar:
         while collected < MAX_POSTS_PER_GROUP:
@@ -385,6 +472,11 @@ def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
             posts = data['response'].get('items', [])
             if not posts:
                 break
+            
+            # Периодический вывод прогресса в лог (каждые 1000 постов)
+            if collected - last_progress_report >= 1000:
+                print(f"   📊 {group_name}: обработано {collected}/{MAX_POSTS_PER_GROUP} ({collected*100//MAX_POSTS_PER_GROUP}%)", flush=True)
+                last_progress_report = collected
 
             # Фильтруем и обрабатываем посты
             valid_posts = []
@@ -393,10 +485,23 @@ def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
                     break
 
                 post_timestamp = post.get('date', 0)
+                post_id = str(post.get('id', ''))
+                
+                # Проверка на дубликат по post_id
+                if post_id in existing_post_ids:
+                    with counter_lock:
+                        global skipped_duplicates
+                        skipped_duplicates += 1
+                    collected += 1
+                    pbar.update(1)
+                    continue
+                
                 if post_timestamp <= cutoff_timestamp:
                     post_data = collector.extract_post_data_fast(post, group_name)
                     if post_data:
                         valid_posts.append(post_data)
+                        # Добавляем в set чтобы не вставить повторно в этой же сессии
+                        existing_post_ids.add(post_id)
                         collected += 1
                         pbar.update(1)
                 else:
@@ -407,6 +512,10 @@ def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
             # Загружаем валидные посты батчем
             if valid_posts:
                 upload_batch_to_mws(valid_posts)
+            
+            # Фоновый режим: пауза между батчами
+            if BACKGROUND_MODE:
+                time.sleep(BACKGROUND_DELAY * 2)
 
             offset += batch_size
 
@@ -425,9 +534,12 @@ def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
 
 def main():
     """Основная функция для сбора данных"""
-    global success_count, error_count
+    global success_count, error_count, skipped_duplicates
 
     print("🚀 ЗАПУСК СБОРА ДАННЫХ ИЗ VK")
+    
+    # Загружаем существующие post_id для проверки дубликатов
+    load_existing_post_ids()
 
     # Получаем дату последнего обновления из таблицы
     CUTOFF_DATE = get_last_update_date()
@@ -451,9 +563,10 @@ def main():
         processed = collect_group_posts_optimized(group_id, group_name, CUTOFF_DATE)
         total_processed += processed
 
-        # Минимальная пауза между группами
+        # Пауза между группами (увеличена в фоновом режиме)
         if i < len(VK_GROUPS) - 1:
-            time.sleep(0.5)
+            pause = 2.0 if BACKGROUND_MODE else 0.5
+            time.sleep(pause)
 
     total_time = time.time() - start_time
 
@@ -461,6 +574,7 @@ def main():
     print("🎉 ФИНАЛЬНАЯ СТАТИСТИКА СБОРА ДАННЫХ")
     print(f"{'='*60}")
     print(f"✅ Успешно загружено: {success_count}")
+    print(f"🔄 Пропущено дубликатов: {skipped_duplicates}")
     print(f"❌ Ошибок: {error_count}")
     print(f"📊 Всего обработано: {total_processed}")
     print(f"⏱️ Время выполнения: {total_time:.1f} сек")
@@ -470,5 +584,20 @@ def main():
         print(f"⚡ Скорость: {speed:.1f} постов/сек")
         print(f"📈 Эффективность: {speed * 60:.1f} постов/мин")
 
-if __name__ == "__main__":
+def run_background():
+    """Запуск в фоновом режиме с низким приоритетом"""
+    import os
+    try:
+        # Устанавливаем низкий приоритет процесса (nice)
+        os.nice(10)
+        print("🔽 Запущен в фоновом режиме с низким приоритетом")
+    except (OSError, AttributeError):
+        print("⚠️ Не удалось установить низкий приоритет, продолжаем в обычном режиме")
+    
     main()
+
+if __name__ == "__main__":
+    if BACKGROUND_MODE:
+        run_background()
+    else:
+        main()

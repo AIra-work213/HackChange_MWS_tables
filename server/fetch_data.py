@@ -3,9 +3,8 @@ import json
 from langchain_core.tools import tool
 
 # Конфигурация
-# Вставьте ваш токен здесь
 API_TOKEN = "uskSID2MFKEnL7AVNUdLrnn" 
-BASE_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstCNkL7G9iYsD0LY9/records"
+BASE_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstRtSXBewJh8lLCNz/records"
 DEFAULT_VIEW_ID = "viwYvxvon7TBU"
 
 @tool
@@ -54,7 +53,6 @@ def get_records_from_model_query(query_params):
 
 
 if __name__ == "__main__":
-    # Эмуляция ответа от модели (как в test.py)
     # Пример: "Топ-5 постов по лайкам"
     fake_model_output = {
         "pageSize": 5,

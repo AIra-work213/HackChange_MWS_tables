@@ -211,22 +211,23 @@ frontend: check-venv
 # Запуск сервера и фронтенда одновременно (в фоне)
 run: check-venv stop
 	@echo "$(GREEN)🚀 Запуск приложения...$(NC)"
-	@cd $(SERVER_DIR) && $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --host 0.0.0.0 --port 8000 &
+	@cd $(SERVER_DIR) && nohup $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --host 0.0.0.0 --port 8000 > $(PROJECT_DIR)/server.log 2>&1 &
 	@sleep 2
-	@$(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 --server.address 0.0.0.0 &
+	@nohup $(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 --server.address 0.0.0.0 > $(PROJECT_DIR)/frontend.log 2>&1 &
 	@sleep 2
-	@echo "$(GREEN)🔄 Запуск autoupdate с периодичностью 2 часа...$(NC)"
-	@while true; do \
-		echo "$$(date): Запуск autoupdate.py..."; \
-		cd $(SERVER_DIR) && $(PROJECT_DIR)/$(PYTHON) autoupdate.py; \
-		echo "$$(date): Следующий запуск через 2 часа"; \
-		sleep 7200; \
-	done &
+	@echo "$(GREEN)🔄 Запуск autoupdate с периодичностью 24 часа (фоновый режим)...$(NC)"
+	@nohup bash -c 'while true; do \
+		echo "$$(date): Запуск autoupdate.py..." >> $(PROJECT_DIR)/autoupdate.log; \
+		cd $(SERVER_DIR) && $(PROJECT_DIR)/$(PYTHON) autoupdate.py >> $(PROJECT_DIR)/autoupdate.log 2>&1; \
+		echo "$$(date): Следующий запуск через 24 часа" >> $(PROJECT_DIR)/autoupdate.log; \
+		sleep 86400; \
+	done' > /dev/null 2>&1 &
 	@echo "$(GREEN)✅ Приложение запущено!$(NC)"
-	@echo "  📡 Сервер: http://localhost:8000"
-	@echo "  🌐 Фронтенд: http://localhost:8501"
-	@echo "  🔄 Autoupdate: каждые 2 часа"
+	@echo "  📡 Сервер: http://localhost:8000  (лог: server.log)"
+	@echo "  🌐 Фронтенд: http://localhost:8501  (лог: frontend.log)"
+	@echo "  🔄 Autoupdate: каждые 24 часа  (лог: autoupdate.log)"
 	@echo ""
+	@echo "Для просмотра логов: $(YELLOW)make logs$(NC)"
 	@echo "Для остановки: $(YELLOW)make stop$(NC)"
 
 # Проверка виртуального окружения
@@ -235,6 +236,24 @@ check-venv:
 		echo "$(RED)❌ Виртуальное окружение не найдено. Запустите: make install$(NC)"; \
 		exit 1; \
 	fi
+
+# Просмотр логов
+logs:
+	@echo "$(YELLOW)📋 Последние логи:$(NC)"
+	@echo ""
+	@echo "$(GREEN)=== Server (последние 10 строк) ===$(NC)"
+	@tail -10 $(PROJECT_DIR)/server.log 2>/dev/null || echo "Лог сервера пуст"
+	@echo ""
+	@echo "$(GREEN)=== Frontend (последние 10 строк) ===$(NC)"
+	@tail -10 $(PROJECT_DIR)/frontend.log 2>/dev/null || echo "Лог фронтенда пуст"
+	@echo ""
+	@echo "$(GREEN)=== Autoupdate (последние 10 строк) ===$(NC)"
+	@tail -10 $(PROJECT_DIR)/autoupdate.log 2>/dev/null || echo "Лог autoupdate пуст"
+
+# Следить за логами в реальном времени
+logs-follow:
+	@echo "$(YELLOW)📋 Слежение за логами (Ctrl+C для выхода):$(NC)"
+	@tail -f $(PROJECT_DIR)/server.log $(PROJECT_DIR)/frontend.log $(PROJECT_DIR)/autoupdate.log
 
 # Проверка установки
 check:
@@ -251,7 +270,7 @@ stop:
 	@-kill $$(lsof -ti:8000) 2>/dev/null || true
 	@-kill $$(lsof -ti:8501) 2>/dev/null || true
 	@-pkill -f "autoupdate.py" 2>/dev/null || true
-	@-pkill -f "sleep 7200" 2>/dev/null || true
+	@-pkill -f "sleep 86400" 2>/dev/null || true
 	@echo "$(GREEN)✅ Процессы остановлены$(NC)"
 
 # Очистка
