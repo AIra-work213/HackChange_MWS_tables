@@ -206,14 +206,17 @@ server: check-venv
 # Запуск Streamlit фронтенда
 frontend: check-venv
 	@echo "$(GREEN)🌐 Запуск Streamlit на порту 8501...$(NC)"
-	@"$(VENV_DIR)/bin/streamlit" run "$(APP_DIR)/chat.py" --server.port 8501
+	STREAMLIT_SERVER_ENABLE_CORS=false STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false \
+	$(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 --server.address 0.0.0.0
 
 # Запуск сервера и фронтенда одновременно (в фоне)
 run: check-venv stop
 	@echo "$(GREEN)🚀 Запуск приложения...$(NC)"
 	@cd "$(SERVER_DIR)" && nohup "$(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn" backend:app --host 0.0.0.0 --port 8000 > "$(PROJECT_DIR)/server.log" 2>&1 &
 	@sleep 2
-	@nohup "$(VENV_DIR)/bin/streamlit" run "$(APP_DIR)/chat.py" --server.port 8501 --server.address 0.0.0.0 > "$(PROJECT_DIR)/frontend.log" 2>&1 &
+	PYTHONUNBUFFERED=1 STREAMLIT_SERVER_ENABLE_CORS=false STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false \
+	nohup $(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py \
+	--server.port 8501 --server.address 0.0.0.0 --logger.level=info > $(PROJECT_DIR)/frontend.log 2>&1 &
 	@sleep 2
 	@echo "$(GREEN)🔄 Запуск autoupdate с периодичностью 24 часа (фоновый режим)...$(NC)"
 	@nohup bash -c 'while true; do \
