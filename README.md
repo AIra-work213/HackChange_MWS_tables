@@ -155,7 +155,7 @@ make install   # Установка
 make run       # Запуск
 ```
 
-### Предварительно после клонирования нужно создать .env файл с API ключом от openrouter
+### Предварительно после клонирования нужно создать .env файл с API ключом от openrouter (см. .env.example)
 
 - **Frontend:** http://localhost:8501
 - **Backend:** http://localhost:8000

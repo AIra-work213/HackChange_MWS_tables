@@ -201,25 +201,25 @@ deps: venv
 # Запуск FastAPI сервера
 server: check-venv
 	@echo "$(GREEN)🚀 Запуск FastAPI сервера на порту 8000...$(NC)"
-	@cd $(SERVER_DIR) && $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --reload --port 8000
+	@cd "$(SERVER_DIR)" && "$(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn" backend:app --reload --port 8000
 
 # Запуск Streamlit фронтенда
 frontend: check-venv
 	@echo "$(GREEN)🌐 Запуск Streamlit на порту 8501...$(NC)"
-	@$(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501
+	@"$(VENV_DIR)/bin/streamlit" run "$(APP_DIR)/chat.py" --server.port 8501
 
 # Запуск сервера и фронтенда одновременно (в фоне)
 run: check-venv stop
 	@echo "$(GREEN)🚀 Запуск приложения...$(NC)"
-	@cd $(SERVER_DIR) && nohup $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --host 0.0.0.0 --port 8000 > $(PROJECT_DIR)/server.log 2>&1 &
+	@cd "$(SERVER_DIR)" && nohup "$(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn" backend:app --host 0.0.0.0 --port 8000 > "$(PROJECT_DIR)/server.log" 2>&1 &
 	@sleep 2
-	@nohup $(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 --server.address 0.0.0.0 > $(PROJECT_DIR)/frontend.log 2>&1 &
+	@nohup "$(VENV_DIR)/bin/streamlit" run "$(APP_DIR)/chat.py" --server.port 8501 --server.address 0.0.0.0 > "$(PROJECT_DIR)/frontend.log" 2>&1 &
 	@sleep 2
 	@echo "$(GREEN)🔄 Запуск autoupdate с периодичностью 24 часа (фоновый режим)...$(NC)"
 	@nohup bash -c 'while true; do \
-		echo "$$(date): Запуск autoupdate.py..." >> $(PROJECT_DIR)/autoupdate.log; \
-		cd $(SERVER_DIR) && $(PROJECT_DIR)/$(PYTHON) autoupdate.py >> $(PROJECT_DIR)/autoupdate.log 2>&1; \
-		echo "$$(date): Следующий запуск через 24 часа" >> $(PROJECT_DIR)/autoupdate.log; \
+		echo "$$(date): Запуск autoupdate.py..." >> "$(PROJECT_DIR)/autoupdate.log"; \
+		cd "$(SERVER_DIR)" && "$(PROJECT_DIR)/$(PYTHON)" autoupdate.py >> "$(PROJECT_DIR)/autoupdate.log" 2>&1; \
+		echo "$$(date): Следующий запуск через 24 часа" >> "$(PROJECT_DIR)/autoupdate.log"; \
 		sleep 86400; \
 	done' > /dev/null 2>&1 &
 	@echo "$(GREEN)✅ Приложение запущено!$(NC)"
@@ -242,27 +242,27 @@ logs:
 	@echo "$(YELLOW)📋 Последние логи:$(NC)"
 	@echo ""
 	@echo "$(GREEN)=== Server (последние 10 строк) ===$(NC)"
-	@tail -10 $(PROJECT_DIR)/server.log 2>/dev/null || echo "Лог сервера пуст"
+	@tail -10 "$(PROJECT_DIR)/server.log" 2>/dev/null || echo "Лог сервера пуст"
 	@echo ""
 	@echo "$(GREEN)=== Frontend (последние 10 строк) ===$(NC)"
-	@tail -10 $(PROJECT_DIR)/frontend.log 2>/dev/null || echo "Лог фронтенда пуст"
+	@tail -10 "$(PROJECT_DIR)/frontend.log" 2>/dev/null || echo "Лог фронтенда пуст"
 	@echo ""
 	@echo "$(GREEN)=== Autoupdate (последние 10 строк) ===$(NC)"
-	@tail -10 $(PROJECT_DIR)/autoupdate.log 2>/dev/null || echo "Лог autoupdate пуст"
+	@tail -10 "$(PROJECT_DIR)/autoupdate.log" 2>/dev/null || echo "Лог autoupdate пуст"
 
 # Следить за логами в реальном времени
 logs-follow:
 	@echo "$(YELLOW)📋 Слежение за логами (Ctrl+C для выхода):$(NC)"
-	@tail -f $(PROJECT_DIR)/server.log $(PROJECT_DIR)/frontend.log $(PROJECT_DIR)/autoupdate.log
+	@tail -f "$(PROJECT_DIR)/server.log" "$(PROJECT_DIR)/frontend.log" "$(PROJECT_DIR)/autoupdate.log"
 
 # Проверка установки
 check:
 	@echo "$(YELLOW)🔍 Проверка установки...$(NC)"
 	@echo "Python версия:"
-	@$(PYTHON) --version 2>/dev/null || echo "$(RED)Python не найден в venv$(NC)"
+	@"$(PYTHON)" --version 2>/dev/null || echo "$(RED)Python не найден в venv$(NC)"
 	@echo ""
 	@echo "Установленные пакеты:"
-	@$(PIP) list 2>/dev/null | grep -E "(fastapi|uvicorn|openai|streamlit|langchain|pandas)" || echo "$(RED)Пакеты не установлены$(NC)"
+	@"$(PIP)" list 2>/dev/null | grep -E "(fastapi|uvicorn|openai|streamlit|langchain|pandas)" || echo "$(RED)Пакеты не установлены$(NC)"
 
 # Остановка всех процессов
 stop:
@@ -283,5 +283,5 @@ clean: stop
 # Загрузка данных из CSV
 load-data: check-venv
 	@echo "$(YELLOW)📊 Загрузка данных из CSV...$(NC)"
-	@cd $(SERVER_DIR) && $(PROJECT_DIR)/$(PYTHON) insert_data.py
+	@cd "$(SERVER_DIR)" && "$(PROJECT_DIR)/$(PYTHON)" insert_data.py
 	@echo "$(GREEN)✅ Данные загружены$(NC)"
