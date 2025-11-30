@@ -211,12 +211,21 @@ frontend: check-venv
 # Запуск сервера и фронтенда одновременно (в фоне)
 run: check-venv stop
 	@echo "$(GREEN)🚀 Запуск приложения...$(NC)"
-	@cd $(SERVER_DIR) && $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --port 8000 &
+	@cd $(SERVER_DIR) && $(PROJECT_DIR)/$(VENV_DIR)/bin/uvicorn backend:app --host 0.0.0.0 --port 8000 &
 	@sleep 2
-	@$(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 &
+	@$(VENV_DIR)/bin/streamlit run $(APP_DIR)/chat.py --server.port 8501 --server.address 0.0.0.0 &
+	@sleep 2
+	@echo "$(GREEN)🔄 Запуск autoupdate с периодичностью 2 часа...$(NC)"
+	@while true; do \
+		echo "$$(date): Запуск autoupdate.py..."; \
+		cd $(SERVER_DIR) && $(PROJECT_DIR)/$(PYTHON) autoupdate.py; \
+		echo "$$(date): Следующий запуск через 2 часа"; \
+		sleep 7200; \
+	done &
 	@echo "$(GREEN)✅ Приложение запущено!$(NC)"
 	@echo "  📡 Сервер: http://localhost:8000"
 	@echo "  🌐 Фронтенд: http://localhost:8501"
+	@echo "  🔄 Autoupdate: каждые 2 часа"
 	@echo ""
 	@echo "Для остановки: $(YELLOW)make stop$(NC)"
 
@@ -241,6 +250,8 @@ stop:
 	@echo "$(YELLOW)⏹️ Остановка процессов...$(NC)"
 	@-kill $$(lsof -ti:8000) 2>/dev/null || true
 	@-kill $$(lsof -ti:8501) 2>/dev/null || true
+	@-pkill -f "autoupdate.py" 2>/dev/null || true
+	@-pkill -f "sleep 7200" 2>/dev/null || true
 	@echo "$(GREEN)✅ Процессы остановлены$(NC)"
 
 # Очистка
