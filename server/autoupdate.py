@@ -37,7 +37,7 @@ VK_GROUPS = {
 VK_TOKEN = '954e97ed954e97ed954e97ed2d967306909954e954e97edfc65b931ccd5ae0f3c2a7afe'
 
 # MWS настройки для таблицы
-MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstRtSXBewJh8lLCNz/records"
+MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstCNkL7G9iYsD0LY9/records"
 MWS_HEADERS = {
     "Authorization": "Bearer uskSID2MFKEnL7AVNUdLrnn",
     "Content-Type": "application/json"

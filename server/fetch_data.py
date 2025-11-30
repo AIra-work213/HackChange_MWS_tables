@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 # Конфигурация
 # Вставьте ваш токен здесь
 API_TOKEN = "uskSID2MFKEnL7AVNUdLrnn" 
-BASE_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstRtSXBewJh8lLCNz/records"
+BASE_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstCNkL7G9iYsD0LY9/records"
 DEFAULT_VIEW_ID = "viwYvxvon7TBU"
 
 @tool
