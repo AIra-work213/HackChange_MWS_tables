@@ -25,19 +25,19 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 # Настройка логирования
 logging.basicConfig(level=logging.WARNING)
 
-# ID групп операторов связи для мониторинга
-VK_GROUPS = [
-    '-8458649',   # МТС
-    '-26514504',  # Билайн
-    '-18098621',  # Теле2
-    '-50353992',  # Йота
-    '-3785'       # Мегафон
-]
+# Словарь групп операторов связи для мониторинга (ID -> название)
+VK_GROUPS = {
+    '-8458649': 'МТС',    # МТС
+    '-26514504': 'Билайн', # Билайн
+    '-18098621': 'Теле2',  # Теле2
+    '-50353992': 'Йота',   # Йота
+    '-3785': 'Мегафон'     # Мегафон
+}
 
 VK_TOKEN = '954e97ed954e97ed954e97ed2d967306909954e954e97edfc65b931ccd5ae0f3c2a7afe'
 
-# MWS настройки
-MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstCNkL7G9iYsD0LY9/records"
+# MWS настройки для таблицы
+MWS_URL = "https://tables.mws.ru/fusion/v1/datasheets/dstRtSXBewJh8lLCNz/records"
 MWS_HEADERS = {
     "Authorization": "Bearer uskSID2MFKEnL7AVNUdLrnn",
     "Content-Type": "application/json"
@@ -58,7 +58,7 @@ success_count = 0
 error_count = 0
 counter_lock = Lock()
 
-class VKDataCollector:
+class FastVKDataCollector:
     def __init__(self, vk_token, api_version='5.199'):
         self.vk_token = vk_token
         self.api_version = api_version
@@ -68,9 +68,9 @@ class VKDataCollector:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
 
-    def get_wall_posts(self, owner_id, offset=0, count=100, start_time=None):
-        """Получение постов со стены"""
-        time.sleep(0.1)
+    def get_wall_posts_fast(self, owner_id, offset=0, count=100):
+        """Быстрое получение постов без ретраев"""
+        time.sleep(0.05)  # Минимальная задержка
 
         method = 'wall.get'
         params = {
@@ -82,18 +82,15 @@ class VKDataCollector:
             'extended': 0
         }
 
-        if start_time:
-            params['start_time'] = int(start_time.timestamp())
-
         try:
-            response = self.session.get(f"{self.base_url}{method}", params=params, timeout=10)
+            response = self.session.get(f"{self.base_url}{method}", params=params, timeout=5)
             response.raise_for_status()
             data = response.json()
 
             if 'error' in data:
                 error_code = data['error'].get('error_code')
-                if error_code in [6, 9, 29]:
-                    time.sleep(2)
+                if error_code in [6, 9, 29]:  # Rate limit ошибки
+                    time.sleep(1)
                 return None
 
             return data
@@ -116,7 +113,7 @@ class VKDataCollector:
         else:
             return "Очень низкая"
 
-    def extract_post_data(self, post):
+    def extract_post_data_fast(self, post, group_name):
         try:
             post_id = post.get('id')
             owner_id = post.get('owner_id')
@@ -128,12 +125,13 @@ class VKDataCollector:
             comments = post.get('comments', {}).get('count', 0)
             views = post.get('views', {}).get('count') if post.get('views') else 0
 
+            # Быстрый поиск заголовка
             title = ''
-            for attachment in post.get('attachments', [])[:2]:
+            for attachment in post.get('attachments', [])[:1]:
                 attachment_type = attachment.get('type')
-                if attachment_type in ['link', 'video', 'photo']:
+                if attachment_type in ['link', 'video']:
                     attachment_data = attachment.get(attachment_type, {})
-                    title = attachment_data.get('title', '')[:300]
+                    title = attachment_data.get('title', '')[:200]
                     break
 
             er = self.calculate_er(likes, reposts, comments, views)
@@ -141,27 +139,27 @@ class VKDataCollector:
 
             return {
                 'id_group': owner_id,
+                'group_name': group_name,
                 'id_post': post_id,
                 'date_time': date_timestamp,
                 'title': title,
-                'text': text[:1000],
+                'text': text[:500],
                 'views': views,
                 'likes': likes,
                 'reposts': reposts,
-                'comments': comments,
+                'comments_count': comments,
                 'ER': round(er, 2),
                 'Efficiency': efficiency,
-                'day_of_week': ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"][datetime.fromtimestamp(date_timestamp).weekday()],
+                'day_of_week': ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][datetime.fromtimestamp(date_timestamp).weekday()],
                 'date': datetime.fromtimestamp(date_timestamp).strftime('%Y-%m-%d'),
-                'time_period': self.get_time_period(date_timestamp),
+                'time_period': self.get_time_period_fast(date_timestamp),
                 'len_text': len(text)
             }
 
-        except Exception as e:
-            print(f"❌ Ошибка извлечения данных поста: {e}")
+        except Exception:
             return None
 
-    def get_time_period(self, timestamp):
+    def get_time_period_fast(self, timestamp):
         hour = datetime.fromtimestamp(timestamp).hour
         if 6 <= hour < 12:
             return "Утро"
@@ -172,12 +170,12 @@ class VKDataCollector:
         else:
             return "Ночь"
 
-def get_last_update_time():
+def get_last_update_date():
+    """Получает дату последнего обновления из таблицы"""
     try:
         params = {
             **MWS_PARAMS,
-            "pageSize": 1,
-            "filter": f'{{"operator":"and","conditions":[{{"field":"post_id","operator":"is","value":"{LAST_UPDATE_RECORD_ID}"}}]}}'
+            "recordIds": LAST_UPDATE_RECORD_ID
         }
 
         response = requests.get(
@@ -189,87 +187,25 @@ def get_last_update_time():
 
         if response.status_code == 200:
             data = response.json()
-            records = data.get('data', {}).get('records', [])
-            if records:
-                last_update_timestamp = records[0]['fields'].get('post_date_time', 0) // 1000
-                last_update_time = datetime.fromtimestamp(last_update_timestamp)
-                print(f"📅 Найдено время последнего обновления: {last_update_time}")
-                return last_update_time
+            if data and 'data' in data and data['data']:
+                record = data['data'][0]
+                post_date_time = record.get('fields', {}).get('post_date_time')
+                if post_date_time:
+                    # Конвертируем из миллисекунд в секунды
+                    timestamp = post_date_time / 1000
+                    last_update_date = datetime.fromtimestamp(timestamp)
+                    print(f"📅 Найдена дата последнего обновления в таблице: {last_update_date}")
+                    return last_update_date
 
-        # Если записи нет, возвращаем очень старое время
-        very_old_time = datetime.fromtimestamp(0)
-        print(f"🆕 Запись времени обновления не найдена, начинаем с начала")
-        return very_old_time
-
-    except Exception as e:
-        print(f"Ошибка при получении времени обновления: {e}")
-        very_old_time = datetime.fromtimestamp(0)
-        return very_old_time
-
-def update_last_update_time():
-    current_time = datetime.now()
-
-    record_data = {
-        "records": [{
-            "fields": {
-                "post_id": LAST_UPDATE_RECORD_ID,
-                "title": "LAST_UPDATE_TRACKER",
-                "text": f"Последнее обновление: {current_time}",
-                "attachment_description": "Системная запись",
-                "views": 0,
-                "likes": 0,
-                "reposts": 0,
-                "comments_count": 0,
-                "comments": "Системная запись для отслеживания времени обновления",
-                "post_date_time": int(current_time.timestamp()) * 1000,
-                "owner_id": "system",
-                "ER": 0,
-                "Efficiency": "Системная",
-                "day_of_week": "Системная",
-                "post_date": int(current_time.timestamp()) * 1000,
-                "time_period": "Системное",
-                "len_text": 0
-            }
-        }],
-        "fieldKey": "name"
-    }
-
-    try:
-        params = {
-            **MWS_PARAMS,
-            "recordIds": LAST_UPDATE_RECORD_ID
-        }
-
-        response = requests.put(
-            MWS_URL,
-            params=params,
-            headers=MWS_HEADERS,
-            json=record_data,
-            timeout=10
-        )
-
-        if response.status_code not in [200, 201]:
-            response = requests.post(
-                MWS_URL,
-                params=MWS_PARAMS,
-                headers=MWS_HEADERS,
-                json=record_data,
-                timeout=10
-            )
-
-        if response.status_code in [200, 201]:
-            print(f"✅ Время обновления установлено на: {current_time}")
-            return True
-        else:
-            print(f"❌ Ошибка записи времени обновления: {response.status_code}")
-            return False
+        # Если запись не найдена, используем дату по умолчанию
+        print("⚠️ Запись о последнем обновлении не найдена, используем дату по умолчанию: 11 октября 2025")
+        return datetime(2025, 10, 11)
 
     except Exception as e:
-        print(f"❌ Ошибка при обновлении времени: {e}")
-        return False
+        print(f"⚠️ Ошибка при получении даты обновления: {e}, используем дату по умолчанию: 11 октября 2025")
+        return datetime(2025, 10, 11)
 
 def upload_batch_to_mws(posts_data):
-    """Загрузка батча постов в MWS"""
     global success_count, error_count
 
     if not posts_data:
@@ -285,10 +221,9 @@ def upload_batch_to_mws(posts_data):
             "views": int(post['views']),
             "likes": int(post['likes']),
             "reposts": int(post['reposts']),
-            "comments_count": int(post['comments']),
-            "comments": "Нет комментариев",
+            "comments_count": int(post['comments_count']),
             "post_date_time": int(post['date_time']) * 1000,
-            "owner_id": str(post['id_group']),
+            "owner_id": str(post['group_name']),  # Название группы вместо ID
             "ER": float(post['ER']),
             "Efficiency": str(post['Efficiency']),
             "day_of_week": str(post['day_of_week']),
@@ -308,7 +243,7 @@ def upload_batch_to_mws(posts_data):
             params=MWS_PARAMS,
             headers=MWS_HEADERS,
             json=data,
-            timeout=15
+            timeout=10
         )
 
         if response.status_code in [200, 201]:
@@ -316,22 +251,22 @@ def upload_batch_to_mws(posts_data):
                 success_count += len(posts_data)
             return len(posts_data)
         else:
-            # Fallback на одиночную загрузку
+            # Если батч не прошел, пробуем по одному
             successful = 0
             for post in posts_data:
-                if upload_single_post(post):
+                if upload_single_post_fast(post):
                     successful += 1
             return successful
 
     except Exception:
+        # Fallback на одиночную загрузку
         successful = 0
         for post in posts_data:
-            if upload_single_post(post):
+            if upload_single_post_fast(post):
                 successful += 1
         return successful
 
-def upload_single_post(post_data):
-    """Загрузка одного поста в MWS"""
+def upload_single_post_fast(post_data):
     global success_count, error_count
 
     try:
@@ -343,10 +278,9 @@ def upload_single_post(post_data):
             "views": int(post_data['views']),
             "likes": int(post_data['likes']),
             "reposts": int(post_data['reposts']),
-            "comments_count": int(post_data['comments']),
-            "comments": "Нет комментариев",
+            "comments_count": int(post_data['comments_count']),
             "post_date_time": int(post_data['date_time']) * 1000,
-            "owner_id": str(post_data['id_group']),
+            "owner_id": str(post_data['group_name']),  # Название группы вместо ID
             "ER": float(post_data['ER']),
             "Efficiency": str(post_data['Efficiency']),
             "day_of_week": str(post_data['day_of_week']),
@@ -365,7 +299,7 @@ def upload_single_post(post_data):
             params=MWS_PARAMS,
             headers=MWS_HEADERS,
             json=data,
-            timeout=10
+            timeout=5
         )
 
         if response.status_code in [200, 201]:
@@ -385,138 +319,156 @@ def upload_single_post(post_data):
             error_count += 1
         return False
 
-def collect_new_posts_from_group(owner_id, last_update_time):
-    """Сбор новых постов из группы после последнего обновления"""
+def find_start_offset(collector, owner_id, total_posts, cutoff_date):
+    """Бинарный поиск для быстрого нахождения постов до cutoff даты"""
+    print("🔍 Быстрый поиск стартовой позиции...")
+
+    low = 0
+    high = min(total_posts, 2000)  # Ограничиваем поиск первыми 2000 постами
+    cutoff_timestamp = cutoff_date.timestamp()
+
+    while low <= high:
+        mid = (low + high) // 2
+        print(f"   Проверка offset {mid}...")
+
+        data = collector.get_wall_posts_fast(owner_id, mid, 1)
+        if not data or not data['response']['items']:
+            break
+
+        post = data['response']['items'][0]
+        post_timestamp = post.get('date', 0)
+
+        if post_timestamp > cutoff_timestamp:
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    # Начинаем с найденной позиции
+    start_offset = max(0, low - 50)  # Немного отступаем назад для надежности
+    print(f"Начинаем с отступа: {start_offset}")
+    return start_offset
+
+def collect_group_posts_optimized(owner_id, group_name, cutoff_date):
     global success_count, error_count
 
-    collector = VKDataCollector(VK_TOKEN)
+    collector = FastVKDataCollector(VK_TOKEN)
 
-    print(f"Группа {owner_id}: поиск постов после {last_update_time}")
+    print(f"\n📊 Обработка группы: {group_name} ({owner_id})")
 
-    # Считаем общее количество новых постов для прогресс-бара
-    total_new_posts = 0
-    offset = 0
-    has_more_posts = True
-
-    while has_more_posts and total_new_posts < MAX_POSTS_PER_GROUP:
-        wall_data = collector.get_wall_posts(owner_id, offset, 100, last_update_time)
-        if not wall_data:
-            break
-
-        posts = wall_data['response']['items']
-        if not posts:
-            break
-
-        for post in posts:
-            post_timestamp = post.get('date', 0)
-            post_time = datetime.fromtimestamp(post_timestamp)
-            if post_time > last_update_time and total_new_posts < MAX_POSTS_PER_GROUP:
-                total_new_posts += 1
-            else:
-                has_more_posts = False
-                break
-
-        if has_more_posts:
-            offset += 100
-
-    if total_new_posts == 0:
-        print(f"Новых постов не найдено")
+    # Получаем общее количество
+    test_data = collector.get_wall_posts_fast(owner_id, 0, 1)
+    if not test_data:
+        print(f"❌ Не удалось получить данные для группы {group_name}")
         return 0
 
-    limited_new_posts = min(total_new_posts, MAX_POSTS_PER_GROUP)
-    print(f"   Найдено {total_new_posts} новых постов")
-    print(f"   Будет обработано: {limited_new_posts} постов")
+    total_posts = test_data['response']['count']
+    print(f"📈 Всего постов: {total_posts}")
 
-    # Собираем и загружаем посты
-    offset = 0
-    processed_count = 0
-    has_more_posts = True
+    if total_posts == 0:
+        return 0
 
-    with tqdm(total=limited_new_posts, desc=f"Группа {owner_id}") as pbar:
-        while has_more_posts and processed_count < limited_new_posts:
-            wall_data = collector.get_wall_posts(owner_id, offset, 100, last_update_time)
-            if not wall_data:
+    # Определяем стартовую позицию
+    start_offset = find_start_offset(collector, owner_id, total_posts, cutoff_date)
+
+    collected = 0
+    offset = start_offset
+    batch_size = 100
+    cutoff_timestamp = cutoff_date.timestamp()
+
+    with tqdm(total=MAX_POSTS_PER_GROUP, desc=f"Группа {group_name}") as pbar:
+        while collected < MAX_POSTS_PER_GROUP:
+            # батч
+            data = collector.get_wall_posts_fast(owner_id, offset, batch_size)
+            if not data:
                 break
 
-            posts = wall_data['response']['items']
+            posts = data['response'].get('items', [])
             if not posts:
                 break
 
-            batch_posts = []
+            # Фильтруем и обрабатываем посты
+            valid_posts = []
             for post in posts:
-                post_timestamp = post.get('date', 0)
-                post_time = datetime.fromtimestamp(post_timestamp)
-                if post_time > last_update_time and processed_count < limited_new_posts:
-                    post_data = collector.extract_post_data(post)
-                    if post_data:
-                        batch_posts.append(post_data)
-                    processed_count += 1
-                    pbar.update(1)
-                else:
-                    has_more_posts = False
+                if collected >= MAX_POSTS_PER_GROUP:
                     break
 
-            if batch_posts:
-                upload_batch_to_mws(batch_posts)
+                post_timestamp = post.get('date', 0)
+                if post_timestamp <= cutoff_timestamp:
+                    post_data = collector.extract_post_data_fast(post, group_name)
+                    if post_data:
+                        valid_posts.append(post_data)
+                        collected += 1
+                        pbar.update(1)
+                else:
+                    # Пропускаем новые посты
+                    collected += 1
+                    pbar.update(1)
 
-            offset += 100
-            time.sleep(0.3)
+            # Загружаем валидные посты батчем
+            if valid_posts:
+                upload_batch_to_mws(valid_posts)
 
-    print(f"✅ Группа {owner_id}: обработано {processed_count} новых постов")
-    return processed_count
+            offset += batch_size
 
-def main_incremental():
-    """Основная функция для инкрементального обновления"""
+            # Быстрая проверка: если все посты в батче новые, ускоряемся
+            if len(valid_posts) == 0 and len(posts) > 0:
+                # Увеличиваем шаг для пропуска новых постов
+                skip_ahead = min(500, MAX_POSTS_PER_GROUP - collected)
+                if skip_ahead > 100:
+                    offset += skip_ahead - batch_size
+                    pbar.update(skip_ahead)
+                    collected += skip_ahead
+                    print(f"⚡ Пропускаем {skip_ahead} новых постов")
+
+    print(f"✅ Группа {group_name}: обработано {collected} постов")
+    return collected
+
+def main():
+    """Основная функция для сбора данных"""
     global success_count, error_count
 
-    print("ЗАПУСК ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ")
-    print("Режим: сбор только новых постов")
-    print(f"Лимит: {MAX_POSTS_PER_GROUP} постов на группу")
+    print("🚀 ЗАПУСК СБОРА ДАННЫХ ИЗ VK")
+
+    # Получаем дату последнего обновления из таблицы
+    CUTOFF_DATE = get_last_update_date()
+
+    print(f"📅 Сбор постов до: {CUTOFF_DATE}")
+    print(f"🎯 Лимит: {MAX_POSTS_PER_GROUP} постов на группу")
+    print(f"📊 Группы для обработки: {len(VK_GROUPS)}")
+    for group_id, group_name in VK_GROUPS.items():
+        print(f"   - {group_name} ({group_id})")
     print("=" * 60)
 
-    # Получаем время последнего обновления
-    last_update_time = get_last_update_time()
-
     start_time = time.time()
-
-    # Сбрасываем счетчики
-    success_count = 0
-    error_count = 0
-
     total_processed = 0
 
-    # Обрабатываем группы
-    for i, group_id in enumerate(VK_GROUPS):
+    # Обрабатываем группы с максимальной скоростью
+    for i, (group_id, group_name) in enumerate(VK_GROUPS.items()):
         print(f"\n{'='*50}")
-        print(f"Группа {i+1}/{len(VK_GROUPS)}: {group_id}")
+        print(f"🔄 Группа {i+1}/{len(VK_GROUPS)}: {group_name}")
         print(f"{'='*50}")
 
-        processed = collect_new_posts_from_group(group_id, last_update_time)
+        processed = collect_group_posts_optimized(group_id, group_name, CUTOFF_DATE)
         total_processed += processed
 
+        # Минимальная пауза между группами
         if i < len(VK_GROUPS) - 1:
-            time.sleep(1)
-
-    # Обновляем время последнего обновления только если были новые посты
-    if success_count > 0:
-        print(f"\nОбновляем дату последнего обновления...")
-        update_last_update_time()
+            time.sleep(0.5)
 
     total_time = time.time() - start_time
 
     print(f"\n{'='*60}")
-    print("ФИНАЛЬНАЯ СТАТИСТИКА")
+    print("🎉 ФИНАЛЬНАЯ СТАТИСТИКА СБОРА ДАННЫХ")
     print(f"{'='*60}")
     print(f"✅ Успешно загружено: {success_count}")
     print(f"❌ Ошибок: {error_count}")
-    print(f"Всего обработано: {total_processed}")
-    print(f"Время выполнения: {total_time:.1f} сек")
+    print(f"📊 Всего обработано: {total_processed}")
+    print(f"⏱️ Время выполнения: {total_time:.1f} сек")
 
-    if success_count > 0:
-        print(f"\nИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
-        print(f"Добавлено {success_count} новых постов")
-    else:
-        print(f"\nℹНовых постов не найдено")
+    if total_processed > 0:
+        speed = total_processed / total_time
+        print(f"⚡ Скорость: {speed:.1f} постов/сек")
+        print(f"📈 Эффективность: {speed * 60:.1f} постов/мин")
 
 if __name__ == "__main__":
-    main_incremental()
+    main()
